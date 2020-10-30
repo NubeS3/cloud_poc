@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/colinmarc/hdfs"
 	"github.com/gin-gonic/gin"
-	"io/ioutil"
+	"io"
 	"math"
 	"net/http"
 	"os"
@@ -16,12 +16,15 @@ func main() {
 
 	r := gin.Default()
 
-	client, _ := hdfs.New("tri:9000")
+	client, err := hdfs.New("tri:9000")
+	if err != nil {
+		panic(err)
+	}
 	defer client.Close()
 
 	// Set a lower memory limit for multipart forms (default is 32 MiB)
 	//r.MaxMultipartMemory = 8 << 20  // 8 MiB
-	r.PUT("/upload", func(c *gin.Context) {
+	r.POST("/upload", func(c *gin.Context) {
 		// Multipart form
 		form, _ := c.MultipartForm()
 		files := form.File["upload"]
@@ -63,7 +66,6 @@ func main() {
 				}
 				fmt.Printf("%d byte read on %d total\n", byteRead, file.Size)
 
-
 				byteWritten, err := hadoopFile.Write(data[:byteRead])
 				if err != nil {
 					fmt.Println(">=write meow====")
@@ -80,11 +82,11 @@ func main() {
 
 	r.GET("/download/:filename", func(c *gin.Context) {
 		fn := c.Param("filename")
+		fmt.Printf("Download %s\n", fn)
 		file, err := client.Open("/userRinRinCute/" + fn)
 		if err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": err})
 		}
-		data, err := ioutil.ReadAll(file)
 		c.Writer.WriteHeader(http.StatusOK)
 		c.Header("Pragma", "public")
 		c.Header("Expires", "0")
@@ -92,9 +94,14 @@ func main() {
 		c.Header("Cache-Control", "must-revalidate, post-check=0, pre-check=0")
 		c.Header("Content-Type", "application/octet-stream")
 		c.Header("Content-Transfer-Encoding", "binary")
-		c.Header("Content-Length", string(len(data)))
 		c.Header("Content-Disposition", "attachment; filename=\""+fn+"\"")
-		c.Writer.Write(data)
+		byteSent, err := io.Copy(c.Writer, file)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("%d bytes sent to client", byteSent)
+
+		//c.Writer.Write(data)
 		//c.File(file.Name()
 
 	})
@@ -114,6 +121,5 @@ func main() {
 
 		c.JSON(http.StatusOK, gin.H{"message": "hah"})
 	})
-	r.Run(":3000")
-
+	r.Run(":8080")
 }
